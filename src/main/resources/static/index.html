@@ -1,0 +1,310 @@
+
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pars AI Asistanı</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f5f9;
+            color: #222;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 24px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        h1 {
+            margin-top: 0;
+            color: #254b91;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 24px;
+        }
+
+        #chatBox {
+            min-height: 300px;
+            max-height: 500px;
+            overflow-y: auto;
+            padding: 16px;
+            background: #f8f9fc;
+            border-radius: 10px;
+            margin-bottom: 16px;
+        }
+
+        .message {
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            border-radius: 10px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            line-height: 1.6;
+        }
+
+        .user {
+            background: #dce8ff;
+            margin-left: 50px;
+        }
+
+        .ai {
+            background: #e6f5e9;
+            margin-right: 30px;
+        }
+
+        .error {
+            background: #ffe4e4;
+            color: #a00000;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 90px;
+            padding: 14px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            font-size: 16px;
+            resize: vertical;
+        }
+
+        button {
+            margin-top: 12px;
+            padding: 12px 24px;
+            background: #254b91;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            background: #999;
+            cursor: not-allowed;
+        }
+
+        .clear-button {
+            background: #777;
+            margin-left: 8px;
+        }
+
+        .status {
+            margin-top: 10px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                margin: 12px;
+                padding: 16px;
+            }
+
+            .user {
+                margin-left: 15px;
+            }
+
+            .ai {
+                margin-right: 15px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+    <h1>Pars AI Asistanı</h1>
+
+    <p class="subtitle">
+        Spring AI + Ollama + Qwen ile çalışan kişisel asistanın.
+    </p>
+
+    <div id="chatBox" aria-live="polite"></div>
+
+    <form id="chatForm">
+        <textarea
+                id="message"
+                placeholder="Örneğin: Spring Boot nedir? 3 maddede açıkla."
+                required
+        ></textarea>
+
+        <button id="sendButton" type="submit">Gönder</button>
+
+        <button id="clearButton" class="clear-button" type="button">
+            Yeni Sohbet
+        </button>
+
+        <div id="status" class="status"></div>
+    </form>
+</div>
+
+<script>
+    const chatForm = document.getElementById("chatForm");
+    const messageInput = document.getElementById("message");
+    const chatBox = document.getElementById("chatBox");
+    const sendButton = document.getElementById("sendButton");
+    const clearButton = document.getElementById("clearButton");
+    const status = document.getElementById("status");
+
+    // Geçmiş yalnızca bu sayfa açık olduğu sürece tutulur.
+    let conversationHistory = [];
+
+    try {
+    conversationHistory = JSON.parse(
+        localStorage.getItem("conversationHistory") || "[]"
+    );
+
+    if (!Array.isArray(conversationHistory)) {
+        conversationHistory = [];
+    }
+} catch (error) {
+    conversationHistory = [];
+}
+
+    function addMessage(text, type) {
+        const element = document.createElement("div");
+        element.className = "message " + type;
+        element.textContent = text;
+
+        chatBox.appendChild(element);
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        return element;
+    }
+
+    function renderHistory() {
+        chatBox.replaceChildren();
+
+        if (conversationHistory.length === 0) {
+            addMessage(
+                "Merhaba! Java veya Spring Boot hakkında ne öğrenmek istersin?",
+                "ai"
+            );
+            return;
+        }
+
+        conversationHistory.forEach(item => {
+            const isUser = item.role === "user";
+
+            addMessage(
+                (isUser ? "Sen: " : "AI: ") + item.content,
+                isUser ? "user" : "ai"
+            );
+        });
+    }
+
+    renderHistory();
+
+    chatForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+
+        const message = messageInput.value.trim();
+
+        if (!message) {
+            status.textContent = "Lütfen bir mesaj yaz.";
+            return;
+        }
+
+        sendButton.disabled = true;
+        clearButton.disabled = true;
+
+        addMessage("Sen: " + message, "user");
+
+        const loadingMessage = addMessage(
+            "Düşünüyorum...",
+            "ai"
+        );
+
+        status.textContent = "AI cevap hazırlıyor...";
+
+        try {
+    // Önceki mesajları gerçek konuşma geçmişi olarak gönder.
+    const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            message: message,
+            userId: "test-chat-3",
+            history: conversationHistory.slice(-1)
+        })
+    });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    data.detail ||
+                    data.message ||
+                    "HTTP hatası: " + response.status
+                );
+            }
+
+            if (typeof data.answer !== "string") {
+                throw new Error("API yanıtında answer alanı bulunamadı.");
+            }
+
+            // Yanıttaki gereksiz Asistan: etiketini temizle.
+            const answer = data.answer.replace(
+                /^\s*Asistan:\s*/i,
+                ""
+            ).trim();
+
+            loadingMessage.textContent = "AI: " + answer;
+
+            // Başarılı konuşmayı geçmişe ekle.
+            conversationHistory.push(
+                { role: "user", content: message },
+                { role: "assistant", content: answer }
+            );
+            localStorage.setItem(
+    "conversationHistory",
+    JSON.stringify(conversationHistory)
+);
+
+            // Geçmişi bellekte tut; sayfa yenilenince yeni sohbet başlar.
+            if (messageInput.value.trim() === message) {
+                messageInput.value = "";
+            }
+
+        } catch (error) {
+            loadingMessage.className = "message error";
+            loadingMessage.textContent = "Hata: " + error.message;
+
+        } finally {
+            sendButton.disabled = false;
+            clearButton.disabled = false;
+            status.textContent = "";
+            messageInput.focus();
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    });
+
+    clearButton.addEventListener("click", function () {
+        conversationHistory = [];
+        localStorage.removeItem("conversationHistory");
+        messageInput.value = "";
+
+        renderHistory();
+
+        status.textContent = "Yeni sohbet başlatıldı.";
+        messageInput.focus();
+    });
+</script>
+</body>
+</html>
